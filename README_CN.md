@@ -58,7 +58,45 @@ debpkg/
 
 ## 🔧 编译方法
 
-### 基础编译
+### 快速安装（推荐）
+
+使用自动化安装脚本：
+
+```bash
+./install.sh
+```
+
+该脚本将自动：
+- 检查系统依赖（gcc, make）
+- 清理旧的编译产物
+- 编译项目
+- 提供交互式安装选项
+
+#### 安装模式
+
+```bash
+# 交互模式（默认）
+./install.sh
+
+# 系统级安装到 /usr/local/bin（需要 sudo 权限）
+./install.sh --system
+
+# 用户级安装到 ~/.local/bin（无需 sudo）
+./install.sh --user
+
+# 仅编译不安装
+./install.sh --build
+
+# 仅清理编译产物
+./install.sh --clean
+
+# 显示帮助信息
+./install.sh --help
+```
+
+### 手动编译
+
+#### 基础编译
 
 ```bash
 make
@@ -66,7 +104,7 @@ make
 
 这将编译所有模块并生成 `debpkg` 可执行文件。
 
-### 其他编译选项
+#### 其他编译选项
 
 ```bash
 make clean      # 清理编译文件
@@ -79,6 +117,42 @@ make uninstall  # 从 /usr/local/bin 移除
 - GCC 编译器（支持 C99 标准）
 - Make 构建工具
 - Linux/Debian 系统
+
+### 创建 Debian 包
+
+使用自动化打包脚本：
+
+```bash
+./package.sh
+```
+
+这将编译项目并生成可安装的 .deb 包。
+
+#### 打包模式
+
+```bash
+# 完整流程：编译 + 打包
+./package.sh
+
+# 清理构建目录和旧包
+./package.sh --clean
+
+# 仅编译
+./package.sh --build
+
+# 仅打包（假设已编译）
+./package.sh --package
+
+# 验证现有包
+./package.sh --verify
+
+# 显示帮助
+./package.sh --help
+```
+
+**输出文件：** `debpkg_<VERSION>_amd64.deb`
+
+详细的打包文档请查看 [PACKAGE_GUIDE.md](PACKAGE_GUIDE.md)
 
 ## 📖 使用方法
 
@@ -257,7 +331,7 @@ $ ./debpkg uninstall myapp
 | Desktop 文件 | `~/.local/share/applications/` | 无 |
 | 依赖记录 | 数据库记录 | 无 |
 
-## 🌍 文档说明
+## 🍁 文档说明
 
 本项目提供双语文档：
 

@@ -10,38 +10,67 @@
 debpkg/
 │
 ├── include/              # 头文件目录（公共接口声明）
+│   ├── auto_deps.h      # 自动依赖处理模块接口
 │   ├── cli.h            # 命令行交互模块接口
+│   ├── depends.h        # 依赖检测模块接口
+│   ├── desktop.h        # 桌面入口模块接口
+│   ├── env_config.h     # 环境变量配置模块接口
 │   ├── extract.h        # DEB 包提取模块接口
 │   ├── install_system.h # 系统级安装模块接口
 │   ├── install_user.h   # 用户目录安装模块接口
+│   ├── uninstall.h      # 卸载功能模块接口
+│   ├── user_deps.h      # 用户依赖管理模块接口
 │   └── utils.h          # 通用工具函数模块接口
 │
 ├── src/                 # 源代码目录（具体实现）
 │   ├── main.c          # 主程序入口
+│   ├── auto_deps.c     # 自动依赖处理实现
 │   ├── cli.c           # 命令行交互实现
-│   ├── utils.c         # 工具函数实现
+│   ├── depends.c       # 依赖检测实现
+│   ├── desktop.c       # 桌面入口实现
+│   ├── env_config.c    # 环境变量配置实现
 │   ├── extract.c       # DEB 包提取实现
 │   ├── install_system.c # 系统级安装实现
-│   └── install_user.c   # 用户目录安装实现
+│   ├── install_user.c   # 用户目录安装实现
+│   ├── uninstall.c      # 卸载功能实现
+│   ├── user_deps.c     # 用户依赖管理实现
+│   └── utils.c         # 工具函数实现
 │
 ├── obj/                 # 编译目标文件（自动生成）
+│   ├── auto_deps.o
 │   ├── cli.o
+│   ├── depends.o
+│   ├── desktop.o
+│   ├── env_config.o
 │   ├── extract.o
 │   ├── install_system.o
 │   ├── install_user.o
 │   ├── main.o
+│   ├── uninstall.o
+│   ├── user_deps.o
 │   └── utils.o
 │
-├── doc/                 # 文档目录
-│   ├── README.md        # 项目主文档
-│   ├── MODULES.md       # 架构设计文档
-│   ├── QUICKSTART.md    # 快速上手指南
-│   └── CHANGES.md       # 变更记录
+├── 文档目录（根目录）
+│   ├── README.md              # 项目主文档（英文）
+│   ├── README_CN.md           # 项目主文档（中文）
+│   ├── INSTALL_GUIDE.md       # 安装脚本使用指南
+│   ├── MODULES.md             # 架构设计文档
+│   ├── QUICKSTART.md          # 快速上手指南
+│   ├── DIRECTORY_STRUCTURE.md # 目录结构说明
+│   └── ...                    # 其他功能文档
 │
-├── Makefile             # GNU Make 编译脚本
-├── test.sh              # 自动化测试脚本
-├── .gitignore           # Git 忽略配置
-└── debpkg               # 编译生成的可执行文件
+├── 脚本文件
+│   ├── Makefile          # GNU Make 编译脚本
+│   ├── install.sh        # 自动化安装脚本 ⭐ NEW!
+│   ├── test.sh           # 主测试脚本
+│   ├── test_desktop.sh   # 桌面功能测试
+│   ├── test_env_config.sh # 环境配置测试
+│   ├── test_uninstall.sh # 卸载功能测试
+│   ├── test_user_deps.sh # 用户依赖测试
+│   └── clean.sh          # 清理脚本
+│
+├── .gitignore          # Git 忽略配置
+└── debpkg              # 编译生成的可执行文件
 ```
 
 ## 目录分类原则

@@ -58,7 +58,45 @@ For detailed module documentation, see [MODULES.md](MODULES.md)
 
 ## 🔧 Building
 
-### Basic Build
+### Quick Installation (Recommended)
+
+Use the automated installation script:
+
+```bash
+./install.sh
+```
+
+This script will:
+- Check system dependencies (gcc, make)
+- Clean old build artifacts
+- Compile the project
+- Provide interactive installation options
+
+#### Installation Modes
+
+```bash
+# Interactive mode (default)
+./install.sh
+
+# System-wide installation to /usr/local/bin (requires sudo)
+./install.sh --system
+
+# User-local installation to ~/.local/bin (no sudo required)
+./install.sh --user
+
+# Build only without installation
+./install.sh --build
+
+# Clean build artifacts only
+./install.sh --clean
+
+# Show help
+./install.sh --help
+```
+
+### Manual Build
+
+#### Basic Build
 
 ```bash
 make
@@ -66,7 +104,7 @@ make
 
 This will compile all modules and generate the `debpkg` executable.
 
-### Other Build Options
+#### Other Build Options
 
 ```bash
 make clean      # Clean build files
@@ -79,6 +117,42 @@ make uninstall  # Remove from /usr/local/bin
 - GCC compiler (C99 standard support)
 - Make build tool
 - Linux/Debian system
+
+### Creating Debian Package
+
+Use the automated packaging script:
+
+```bash
+./package.sh
+```
+
+This will compile the project and create a `.deb` package ready for installation.
+
+#### Packaging Modes
+
+```bash
+# Full process: compile + package
+./package.sh
+
+# Clean build directory and old packages
+./package.sh --clean
+
+# Compile only
+./package.sh --build
+
+# Package only (assumes already compiled)
+./package.sh --package
+
+# Verify existing package
+./package.sh --verify
+
+# Show help
+./package.sh --help
+```
+
+**Output:** `debpkg_<VERSION>_amd64.deb`
+
+For detailed packaging documentation, see [PACKAGE_GUIDE.md](PACKAGE_GUIDE.md)
 
 ## 📖 Usage
 
