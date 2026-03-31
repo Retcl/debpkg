@@ -244,3 +244,19 @@ void free_dependencies(Dependency *deps, int count) {
         free(deps);
     }
 }
+
+// 检查用户目录依赖是否已安装（带版本检测）
+int check_user_dependency_with_version(const char *pkg_name, const char *version, const char *home_dir) {
+    // 首先检查包是否存在
+    if (!check_user_dependency(pkg_name, home_dir)) {
+        return 0;  // 包未安装
+    }
+    
+    // 如果不需要检查版本，直接返回已安装
+    if (version == NULL || version[0] == '\0' || strcmp(version, "*") == 0) {
+        return 1;  // 已安装且不要求版本
+    }
+    
+    // 检查版本是否匹配
+    return check_user_dependency_version(pkg_name, version, home_dir);
+}

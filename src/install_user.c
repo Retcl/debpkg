@@ -22,6 +22,9 @@
 #include "../include/extract.h"
 #include "../include/utils.h"
 #include "../include/depends.h"
+#include "../include/desktop.h"
+#include "../include/user_deps.h"
+#include "../include/env_config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,6 +83,13 @@ int install_user(const char *deb_path) {
         goto cleanup;
     }
     
+    // 解析包版本
+    char pkg_version[64];
+    if (parse_package_version(control_file, pkg_version, sizeof(pkg_version)) != 0) {
+        print_warning("Failed to parse package version");
+        pkg_version[0] = '\0';  // 使用空字符串作为默认值
+    }
+    
     // 检查并处理依赖
     Dependency *deps = NULL;
     int dep_count = 0;
@@ -89,16 +99,38 @@ int install_user(const char *deb_path) {
         printf(COLOR_BLUE "[INFO] " COLOR_RESET "Found %d dependencies:\n", dep_count);
         
         int missing_deps = 0;
+        int version_mismatch = 0;
+        
         for (int i = 0; i < dep_count; i++) {
             // 检查系统级安装
             if (check_system_dependency(deps[i].name)) {
                 printf("  ✓ %-30s (system)\n", deps[i].name);
                 deps[i].installed = 1;
             }
-            // 检查用户目录安装
-            else if (check_user_dependency(deps[i].name, home_dir)) {
-                printf("  ✓ %-30s (user)\n", deps[i].name);
+            // 检查用户目录安装（带版本检测）
+            else if (check_user_dependency_with_version(deps[i].name, deps[i].version, home_dir)) {
+                char ver_str[64];
+                if (deps[i].version[0]) {
+                    snprintf(ver_str, sizeof(ver_str), " (user, v%s)", deps[i].version);
+                } else {
+                    snprintf(ver_str, sizeof(ver_str), " (user)");
+                }
+                printf("  ✓ %-30s%s\n", deps[i].name, ver_str);
                 deps[i].installed = 1;
+            }
+            // 检查是否存在但版本不匹配
+            else if (check_user_dependency(deps[i].name, home_dir)) {
+                char installed_ver[64];
+                if (get_installed_dep_version(deps[i].name, installed_ver, sizeof(installed_ver), home_dir) == 0) {
+                    printf(COLOR_YELLOW "  ⚠ %-30s (user, v%s installed, v%s required)" COLOR_RESET "\n", 
+                           deps[i].name, installed_ver, deps[i].version);
+                    deps[i].installed = 0;
+                    version_mismatch++;
+                } else {
+                    printf("  ✗ %-30s (missing)\n", deps[i].name);
+                    deps[i].installed = 0;
+                    missing_deps++;
+                }
             }
             // 依赖缺失
             else {
@@ -108,8 +140,14 @@ int install_user(const char *deb_path) {
             }
         }
         
-        if (missing_deps > 0) {
-            printf(COLOR_YELLOW "[WARNING] " COLOR_RESET "Missing %d dependencies:\n", missing_deps);
+        if (missing_deps > 0 || version_mismatch > 0) {
+            if (version_mismatch > 0) {
+                printf(COLOR_YELLOW "[WARNING] " COLOR_RESET "%d version mismatch(es):\n", version_mismatch);
+            }
+            if (missing_deps > 0) {
+                printf(COLOR_YELLOW "[WARNING] " COLOR_RESET "%d missing dependencies:\n", missing_deps);
+            }
+            
             for (int i = 0; i < dep_count; i++) {
                 if (!deps[i].installed) {
                     printf("  - %s%s\n", deps[i].name, deps[i].version[0] ? deps[i].version : "");
@@ -145,7 +183,7 @@ int install_user(const char *deb_path) {
                             if (!deps[i].installed) {
                                 if (check_system_dependency(deps[i].name)) {
                                     deps[i].installed = 1;
-                                } else if (check_user_dependency(deps[i].name, home_dir)) {
+                                } else if (check_user_dependency_with_version(deps[i].name, deps[i].version, home_dir)) {
                                     deps[i].installed = 1;
                                 }
                             }
@@ -334,6 +372,24 @@ int install_user(const char *deb_path) {
         fclose(manifest);
     }
     
+    // 创建 desktop 文件
+    if (is_directory(dst_bin)) {
+        print_info("Creating desktop file...");
+        if (create_desktop_file(pkg_name, home_dir) == 0) {
+            print_success("Desktop entry created successfully!");
+        } else {
+            print_warning("Failed to create desktop file");
+        }
+    }
+    
+    // 保存依赖关系到数据库
+    print_info("Saving dependency record...");
+    if (save_package_dependencies(pkg_name, pkg_version, deps, dep_count, home_dir) == 0) {
+        print_success("Dependency record saved successfully!");
+    } else {
+        print_warning("Failed to save dependency record");
+    }
+    
     print_success("Package installed successfully!");
     print_info("Installation summary:");
     printf("  Executables:   ~/.local/bin/\n");
@@ -348,14 +404,15 @@ int install_user(const char *deb_path) {
     if (is_directory(src_man)) {
         printf("  Documentation: ~/.local/share/man/\n");
     }
-    
-    print_info("To use the installed package:");
-    printf("  export PATH=$HOME/.local/bin:$PATH\n");
-    if (is_directory(src_lib)) {
-        printf("  export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH\n");
+    printf("  Desktop file:  ~/.local/share/applications/%s.desktop\n", pkg_name);
+    if (dep_count > 0) {
+        printf("  Dependencies:  Recorded in database\n");
     }
-    if (is_directory(src_man)) {
-        printf("  export MANPATH=$HOME/.local/share/man:$MANPATH\n");
+    
+    // 检查并提示环境变量配置
+    print_info("Checking environment configuration...");
+    if (check_and_prompt_env_config(home_dir, pkg_name) != 0) {
+        print_warning("Failed to check environment configuration");
     }
     
 cleanup:

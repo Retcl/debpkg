@@ -28,20 +28,30 @@
 #include <unistd.h>
 
 void show_help(const char *prog_name) {
-    printf("Usage: %s [OPTIONS] <package.deb>\n", prog_name);
+    printf("Usage: %s <COMMAND> [OPTIONS] <ARGUMENT>\n", prog_name);
     printf("\n");
-    printf("A tool to install DEB packages system-wide or to user directory.\n");
+    printf("A tool to install/uninstall DEB packages system-wide or to user directory.\n");
     printf("\n");
-    printf("Options:\n");
+    printf("Commands:\n");
+    printf("  install <package.deb>     Install a DEB package\n");
+    printf("  uninstall <package-name>  Uninstall a package from user directory\n");
+    printf("\n");
+    printf("Install Options:\n");
     printf("  -s, --system      Install system-wide using dpkg (requires sudo)\n");
     printf("  -u, --user        Install to user directory (~/.local)\n");
+    printf("\n");
+    printf("Uninstall Options:\n");
+    printf("  No additional options currently\n");
+    printf("\n");
+    printf("Global Options:\n");
     printf("  -h, --help        Show this help message\n");
     printf("  -v, --version     Show version information\n");
     printf("\n");
     printf("Examples:\n");
-    printf("  %s -s package.deb    # Install system-wide\n", prog_name);
-    printf("  %s -u package.deb    # Install to ~/.local\n", prog_name);
-    printf("  %s package.deb       # Default: ask user to choose\n", prog_name);
+    printf("  %s install -s package.deb              # Install system-wide\n", prog_name);
+    printf("  %s install -u package.deb              # Install to ~/.local\n", prog_name);
+    printf("  %s install package.deb                 # Default: ask user to choose\n", prog_name);
+    printf("  %s uninstall package-name              # Uninstall from user directory\n", prog_name);
     printf("\n");
 }
 

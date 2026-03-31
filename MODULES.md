@@ -8,18 +8,28 @@
 debpkg/
 ├── include/              # 头文件目录（公共接口）
 │   ├── cli.h
-│   ├── extract.h
-│   ├── install_system.h
-│   ├── install_user.h
+│   ├── desktop.h        # Desktop 文件创建模块 ✨
+│   ├── depends.h        # 依赖管理模块
+│   ├── env_config.h     # 环境变量配置模块 ✨
+│   ├── extract.h        # DEB 包提取模块
+│   ├── install_system.h # 系统级安装模块
+│   ├── install_user.h   # 用户目录安装模块
+│   ├── uninstall.h      # 卸载模块 ✨ NEW!
+│   ├── user_deps.h      # 用户依赖记录模块 ✨
 │   └── utils.h
 │
 ├── src/                  # 源代码目录（具体实现）
 │   ├── main.c
 │   ├── cli.c
-│   ├── utils.c
-│   ├── extract.c
-│   ├── install_system.c
-│   └── install_user.c
+│   ├── desktop.c        # Desktop 文件创建实现 ✨
+│   ├── depends.c        # 依赖管理实现
+│   ├── env_config.c     # 环境变量配置实现 ✨
+│   ├── extract.c        # DEB 包提取实现
+│   ├── install_system.c # 系统级安装实现
+│   ├── install_user.c   # 用户目录安装实现
+│   ├── uninstall.c      # 卸载实现 ✨ NEW!
+│   ├── user_deps.c      # 用户依赖记录实现 ✨
+│   └── utils.c
 │
 ├── obj/                  # 编译产物（自动生成）
 │   ├── cli.o
@@ -212,67 +222,233 @@ interactive_install("package.deb");
 
 ---
 
-## 模块依赖关系图
+### 7. desktop 模块 (desktop.c/h) ✨ **新增**
 
+**功能**: 为已安装的包创建 XDG 标准的 desktop 文件
+
+**主要函数**:
+- `create_desktop_file()` - 创建 desktop entry 文件到 `~/.local/share/applications/`
+
+**依赖**: 
+- `utils.h` - 用于目录创建和文件操作
+
+**使用示例**:
+```c
+#include "desktop.h"
+#include "utils.h"
+
+char home_dir[MAX_PATH_LEN];
+get_home_dir(home_dir, sizeof(home_dir));
+create_desktop_file("myapp", home_dir);
 ```
-                    main.c
-                   /  |  \
-                  /   |   \
-                 /    |    \
-           cli.c  install_system.c  install_user.c
-             |         |               /      \
-             |         |              /        \
-          utils.c <---+-------------/          /
-             ^                               /
-             |                              /
-             +----------------------------/
-                        extract.c
-                           |
-                        utils.c
+
+**生成的 Desktop 文件内容**:
+``ini
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=myapp
+Comment=Application installed by debpkg
+Exec=/home/user/.local/bin/myapp
+Icon=application-x-executable
+Terminal=false
+Categories=Application;
+StartupNotify=true
 ```
+
+**特点**:
+- 遵循 XDG Desktop Entry 规范
+- 自动检测文件是否已存在，避免覆盖用户配置
+- 仅在用户目录安装模式下启用
+- 只在检测到可执行文件时创建
 
 ---
 
-## 编译说明
+### 8. user_deps 模块 (user_deps.c/h) ✨ **新增**
 
-### 编译命令
-```bash
-make
+**功能**: 记录和管理用户目录下安装的 DEB 包及其依赖关系，支持版本敏感的依赖检测
+
+**主要函数**:
+- `init_user_deps_db()` - 初始化用户依赖数据库
+- `save_package_dependencies()` - 保存包的依赖关系到数据库
+- `check_user_dependency_version()` - 检查特定版本的依赖是否已安装
+- `get_installed_dep_version()` - 获取已安装依赖的版本号
+- `load_package_dependencies()` - 加载包的依赖记录
+- `list_user_installed_packages()` - 列出所有用户目录下安装的包
+- `remove_package_from_deps_db()` - 从数据库中移除包记录（卸载时使用）
+
+**数据结构**:
+```c
+typedef struct {
+    char pkg_name[256];      // 包名
+    char pkg_version[64];    // 包版本
+    Dependency *deps;        // 依赖列表
+    int dep_count;           // 依赖数量
+} UserPackageRecord;
 ```
 
-### 编译过程
-Makefile 会自动编译所有 .c 文件并链接成可执行文件：
-1. 编译每个源文件为目标文件 (.o)
-2. 链接所有目标文件生成 debpkg
+**依赖**: 
+- `depends.h` - 依赖管理基础接口
+- `utils.h` - 文件操作和目录管理
 
-### 依赖管理
-Makefile 中明确定义了每个目标文件的依赖关系，确保头文件修改后正确重新编译。
+**数据库位置**:
+```
+~/.local/share/debpkg/user_deps.db
+```
+
+**数据库格式**:
+``bash
+# PKG_NAME|PKG_VERSION|DEP_NAME1:DEP_VER1,DEP_NAME2:DEP_VER2
+mypackage|1.2.3|libfoo:>=1.0.0,libbar:=2.1.0,libbaz:*
+```
+
+**使用示例**:
+```c
+#include "user_deps.h"
+
+char home_dir[MAX_PATH_LEN];
+get_home_dir(home_dir, sizeof(home_dir));
+
+// 保存依赖关系
+Dependency deps[3] = {...};
+save_package_dependencies("myapp", "1.2.3", deps, 3, home_dir);
+
+// 检查版本
+if (check_user_dependency_version("libfoo", ">=1.0.0", home_dir)) {
+    printf("Dependency satisfied!\n");
+}
+
+// 获取版本号
+char version[64];
+get_installed_dep_version("libfoo", version, sizeof(version), home_dir);
+printf("Installed version: %s\n", version);
+```
+
+**特性优势**:
+- ✅ **版本敏感** - 精确匹配版本要求
+- ✅ **避免冗余** - 同版本依赖不重复下载
+- ✅ **智能检测** - 自动识别版本冲突
+- ✅ **持久化存储** - 数据库记录所有依赖关系
+- ✅ **易于查询** - 提供完整的 API 用于查询和管理
 
 ---
 
-## 代码规范
+### 9. env_config 模块 (env_config.c/h) ✨ **新增**
 
-### 命名约定
-- **头文件**: 使用 `.h` 扩展名，采用大写宏保护
-- **源文件**: 使用 `.c` 扩展名
-- **函数命名**: 小写字母 + 下划线，如 `print_info()`
-- **宏命名**: 大写字母 + 下划线，如 `MAX_PATH_LEN`
-- **变量命名**: 小写字母 + 下划线，如 `home_dir`
+**功能**: 智能检测和配置用户目录安装所需的环境变量，确保安装的应用和库能被系统正确识别
 
-### 头文件保护
+**主要函数**:
+- `check_and_prompt_env_config()` - 检查并提示环境变量配置
+- `generate_env_script()` - 生成统一的环境配置脚本
+- `show_env_config_guide()` - 显示详细的配置指南
+- `detect_env_issues()` - 自动检测环境问题
+
+**检测的环境变量**:
+- **PATH** - 可执行文件搜索路径（必需）
+- **LD_LIBRARY_PATH** - 共享库搜索路径（必需）
+- **C_INCLUDE_PATH** - C/C++ 头文件搜索路径（可选，开发用）
+- **MANPATH** - 手册页搜索路径（可选）
+
+**使用示例**:
+```c
+#include "env_config.h"
+
+char home_dir[MAX_PATH_LEN];
+get_home_dir(home_dir, sizeof(home_dir));
+
+// 安装完成后检查和提示
+check_and_prompt_env_config(home_dir, pkg_name);
+
+// 或单独使用各个功能
+int issues = detect_env_issues(home_dir);
+if (issues > 0) {
+    generate_env_script(home_dir, "~/.local/debpkg_env.sh");
+    show_env_config_guide(home_dir);
+}
+```
+
+**生成的配置脚本**:
+```
+#!/bin/bash
+# ~/.local/debpkg_env.sh
+export PATH="$HOME/.local/bin:$PATH"
+export LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH"
+export C_INCLUDE_PATH="$HOME/.local/include:$C_INCLUDE_PATH"
+export MANPATH="$HOME/.local/share/man:$MANPATH"
+```
+
+**特性优势**:
+- ✅ **自动检测** - 智能发现未配置的环境变量
+- ✅ **交互友好** - 提供清晰的配置建议
+- ✅ **一键配置** - 生成统一的配置脚本
+- ✅ **灵活选择** - 支持临时和永久两种配置方式
+- ✅ **全局生效** - 一次配置，所有包都可用
+
+---
+
+### 10. uninstall 模块 (uninstall.c/h) ✨ **新增**
+
+**功能**: 实现用户目录下 DEB 包的智能卸载，具备依赖关系检查和保护机制
+
+**主要函数**:
+- `uninstall_package_smart()` - 智能卸载主函数
+- `check_dependency_usage()` - 检查依赖是否被其他包使用
+- `get_package_manifest()` - 获取包的安装清单
+- `remove_package_files()` - 执行文件删除操作
+- `cleanup_unused_dependencies()` - 清理未使用的依赖
+- `show_uninstall_info()` - 显示卸载信息
+
+**数据结构**:
 ``c
-#ifndef DEBPKG_MODULE_H
-#define DEBPKG_MODULE_H
+// 卸载选项
+typedef struct {
+    int force;              // 强制卸载
+    int dry_run;           // 模拟卸载
+    int verbose;           // 详细输出
+} UninstallOptions;
 
-//  declarations
-
-#endif // DEBPKG_MODULE_H
+// 卸载结果统计
+typedef struct {
+    int files_removed;      // 删除的文件数
+    int dirs_removed;       // 删除的目录数
+    int deps_kept;          // 保留的依赖数
+    int deps_removed;       // 删除的依赖数
+} UninstallResult;
 ```
 
-### 注释规范
-- 每个模块文件顶部说明功能
-- 函数上方注释说明用途
-- 复杂逻辑添加行内注释
+**工作流程**:
+1. 检查包是否存在
+2. 显示卸载信息并等待用户确认
+3. 读取 INSTALL_MANIFEST
+4. 删除文件和目录
+5. 删除桌面文件
+6. 检查每个依赖的使用情况
+7. 只删除未被使用的依赖
+8. 从数据库移除记录
+9. 显示统计信息
+
+**特性优势**:
+- ✅ **智能保护** - 自动保护正在使用的依赖
+- ✅ **安全可靠** - 用户确认后才执行
+- ✅ **完整清理** - 删除所有相关文件
+- ✅ **详细反馈** - 清晰的统计信息
+- ✅ **模块化** - 独立的卸载模块
+
+**使用示例**:
+```bash
+# 卸载包
+./debpkg -r package-name
+./debpkg --remove package-name
+./debpkg --uninstall package-name
+
+# 输出示例
+[INFO] Uninstalling package: myapp
+...
+Files removed: 15
+Directories removed: 3
+Dependencies kept: 2
+Dependencies removed: 1
+```
 
 ---
 
@@ -331,10 +507,26 @@ int main() {
 
 ## 总结
 
-通过将 debpkg 分成 6 个模块，我们实现了：
+通过将 debpkg 分成 **8 个模块**，我们实现了：
 - **高内聚**: 每个模块专注于一个功能领域
 - **低耦合**: 模块间通过明确的接口通信
 - **易维护**: 代码结构清晰，便于理解和修改
 - **易扩展**: 新增功能不会影响现有代码
 
-这种模块化设计使得项目更易于长期维护和迭代开发。
+### 模块统计
+
+| 模块 | 头文件 | 源文件 | 行数 | 说明 |
+|------|--------|--------|------|------|
+| utils | utils.h | utils.c | ~200 | 基础工具函数 |
+| cli | cli.h | cli.c | ~150 | 命令行交互 |
+| extract | extract.h | extract.c | ~150 | DEB 包提取 |
+| depends | depends.h | depends.c | ~280 | 依赖管理 |
+| install_system | install_system.h | install_system.c | ~100 | 系统级安装 |
+| install_user | install_user.h | install_user.c | ~430 | 用户目录安装 |
+| desktop | desktop.h | desktop.c | ~90 | Desktop 文件创建 |
+| user_deps | user_deps.h | user_deps.c | ~350 | 用户依赖记录 |
+| env_config | env_config.h | env_config.c | ~230 | 环境变量配置 |
+| uninstall | uninstall.h | uninstall.c | ~380 | 智能卸载 |
+| **总计** | **10** | **10** | **~2360** | **模块化架构** |
+
+这种模块化设计使得项目更易于长期维护和迭代开发.

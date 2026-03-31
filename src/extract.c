@@ -88,3 +88,39 @@ int parse_package_name(const char *control_path, char *pkg_name, size_t size) {
     
     return 0;
 }
+
+int parse_package_version(const char *control_path, char *version, size_t size) {
+    FILE *fp = fopen(control_path, "r");
+    if (fp == NULL) {
+        print_error("Cannot open control file");
+        return -1;
+    }
+    
+    char line[1024];
+    version[0] = '\0';
+    
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "Version:", 8) == 0) {
+            // 跳过 "Version: " 前缀
+            char *ver = line + 8;
+            while (*ver == ' ' || *ver == '\t') ver++;
+            
+            // 移除换行符
+            char *newline = strchr(ver, '\n');
+            if (newline) *newline = '\0';
+            
+            strncpy(version, ver, size - 1);
+            version[size - 1] = '\0';
+            break;
+        }
+    }
+    
+    fclose(fp);
+    
+    if (version[0] == '\0') {
+        // 版本号可选，没有版本号时返回空字符串
+        return 0;
+    }
+    
+    return 0;
+}

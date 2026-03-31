@@ -47,4 +47,10 @@ int parse_dependencies(const char *control_path, Dependency **deps, int *count);
 // 释放依赖列表内存
 void free_dependencies(Dependency *deps, int count);
 
+// 检查用户目录依赖是否已安装（带版本检测）
+int check_user_dependency_with_version(const char *pkg_name, const char *version, const char *home_dir);
+
+// 检查用户目录依赖的版本（内部使用，从 user_deps.c 提供）
+int check_user_dependency_version(const char *pkg_name, const char *version, const char *home_dir);
+
 #endif // DEBPKG_DEPENDS_H
