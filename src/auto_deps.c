@@ -36,7 +36,7 @@ int get_package_download_url(const char *pkg_name, char *url, size_t url_size) {
     char cmd[MAX_CMD_LEN];
     FILE *fp;
     
-    // 使用 apt-cache show 获取包信息
+    // 首先尝试直接使用 apt-cache show
     snprintf(cmd, sizeof(cmd), "apt-cache show %s 2>/dev/null | grep -E '^Filename:' | head -1 | awk '{print $2}'", pkg_name);
     
     fp = popen(cmd, "r");
@@ -46,6 +46,44 @@ int get_package_download_url(const char *pkg_name, char *url, size_t url_size) {
     
     if (fgets(url, url_size, fp) == NULL) {
         pclose(fp);
+        
+        // 如果直接查找失败，尝试搜索相似的包名
+        printf(COLOR_YELLOW "[WARNING] " COLOR_RESET "Package '%s' not found in APT, trying to find similar package...\n", pkg_name);
+        
+        // 提取基础包名（去掉版本号和变体）
+        char base_pkg[256];
+        strncpy(base_pkg, pkg_name, sizeof(base_pkg) - 1);
+        base_pkg[sizeof(base_pkg) - 1] = '\0';
+        
+        // 去掉版本号后缀（如 >= 1.0.17）
+        char *space = strchr(base_pkg, ' ');
+        if (space) *space = '\0';
+        
+        // 使用 apt-cache search 搜索
+        snprintf(cmd, sizeof(cmd), "apt-cache search ^%s$ 2>/dev/null | head -1 | awk '{print $1}'", base_pkg);
+        fp = popen(cmd, "r");
+        if (fp == NULL) {
+            return -1;
+        }
+        
+        char alt_pkg[256];
+        if (fgets(alt_pkg, sizeof(alt_pkg), fp) == NULL) {
+            pclose(fp);
+            return -1;
+        }
+        
+        // 移除换行符
+        char *newline = strchr(alt_pkg, '\n');
+        if (newline) *newline = '\0';
+        
+        pclose(fp);
+        
+        if (strlen(alt_pkg) > 0 && strcmp(alt_pkg, base_pkg) != 0) {
+            printf(COLOR_BLUE "[INFO] " COLOR_RESET "Found alternative package: %s\n", alt_pkg);
+            // 递归调用获取替代包的 URL
+            return get_package_download_url(alt_pkg, url, url_size);
+        }
+        
         return -1;
     }
     
@@ -148,6 +186,7 @@ int download_package_from_apt(const char *pkg_name, const char *output_path) {
 int auto_install_dependencies(Dependency *deps, int count, const char *home_dir) {
     int installed_count = 0;
     int failed_count = 0;
+    int skipped_count = 0;
     char temp_deb_path[MAX_PATH_LEN];
     
     printf("\n");
@@ -159,16 +198,37 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
             continue;  // 已安装的依赖跳过
         }
         
+        // 提取包名（去掉版本约束）
+        char pkg_name[256];
+        strncpy(pkg_name, deps[i].name, sizeof(pkg_name) - 1);
+        pkg_name[sizeof(pkg_name) - 1] = '\0';
+        
+        // 去掉版本号后缀
+        char *space = strchr(pkg_name, ' ');
+        if (space) *space = '\0';
+        
         printf(COLOR_BLUE "[INFO] " COLOR_RESET "Processing: %s%s\n", 
-               deps[i].name, deps[i].version[0] ? " " : "");
+               pkg_name, deps[i].version[0] ? " " : "");
         
         // 创建临时文件路径
-        snprintf(temp_deb_path, sizeof(temp_deb_path), "/tmp/%s_auto.deb", deps[i].name);
+        snprintf(temp_deb_path, sizeof(temp_deb_path), "/tmp/%s_auto.deb", pkg_name);
         
         // 下载包
-        if (download_package_from_apt(deps[i].name, temp_deb_path) != 0) {
-            print_error("Failed to download: ");
-            printf("%s\n", deps[i].name);
+        if (download_package_from_apt(pkg_name, temp_deb_path) != 0) {
+            print_warning("Failed to download: ");
+            printf("%s\n", pkg_name);
+            
+            // 提供手动安装指引
+            printf(COLOR_YELLOW "[MANUAL INSTALL GUIDE] " COLOR_RESET "\n");
+            printf("  You can install this dependency manually using one of these methods:\n\n");
+            printf("  Method 1 - System-wide installation (RECOMMENDED):\n");
+            printf("    sudo apt-get update && sudo apt-get install -y %s\n\n", pkg_name);
+            printf("  Method 2 - Download DEB and install to user directory:\n");
+            printf("    wget http://mirrors.aliyun.com/ubuntu/pool/main/*/%s*.deb\n", pkg_name);
+            printf("    ./debpkg install -u <package>.deb\n\n");
+            printf("  Method 3 - Check if it's already in system:\n");
+            printf("    dpkg -l | grep %s\n\n", pkg_name);
+            
             failed_count++;
             continue;
         }
@@ -178,8 +238,9 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
         
         // 这里需要调用 install_user 函数
         // 但由于循环依赖问题，我们通过外部调用实现
+        // 注意：使用 echo 管道提供非交互式输入避免死循环
         char cmd[MAX_CMD_LEN];
-        snprintf(cmd, sizeof(cmd), "./debpkg -u \"%s\" < /dev/null", temp_deb_path);
+        snprintf(cmd, sizeof(cmd), "echo \"3\" | ./debpkg install -u \"%s\" 2>/dev/null", temp_deb_path);
         
         int ret = system(cmd);
         
@@ -189,12 +250,12 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
         
         if (ret == 0) {
             print_success("Dependency installed: ");
-            printf("%s\n", deps[i].name);
+            printf("%s\n", pkg_name);
             deps[i].installed = 1;
             installed_count++;
         } else {
             print_error("Failed to install: ");
-            printf("%s\n", deps[i].name);
+            printf("%s\n", pkg_name);
             failed_count++;
         }
         
@@ -204,8 +265,15 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
     // 显示统计信息
     printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installation summary:\n");
     printf("  Successfully installed: %d\n", installed_count);
+    printf("  Skipped (already installed): %d\n", skipped_count);
     printf("  Failed: %d\n", failed_count);
     printf("\n");
+    
+    if (failed_count > 0) {
+        printf(COLOR_YELLOW "[WARNING] " COLOR_RESET "%d dependencies failed to install.\n", failed_count);
+        printf("You can continue installation anyway (some features may not work), or\n");
+        printf("install the missing dependencies manually and re-run the installation.\n\n");
+    }
     
     return (failed_count == 0) ? 0 : -1;
 }

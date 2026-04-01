@@ -25,10 +25,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
-int create_desktop_file(const char *pkg_name, const char *home_dir) {
+int create_desktop_file_with_exec(const char *pkg_name, const char *home_dir, const char *exec_path) {
     char desktop_dir[MAX_PATH_LEN];
     char desktop_file[MAX_PATH_LEN];
-    char exec_path[MAX_PATH_LEN];
     FILE *fp;
     
     // 创建 applications 目录
@@ -63,7 +62,7 @@ int create_desktop_file(const char *pkg_name, const char *home_dir) {
     fprintf(fp, "Type=Application\n");
     fprintf(fp, "Name=%s\n", pkg_name);
     fprintf(fp, "Comment=Application installed by debpkg\n");
-    fprintf(fp, "Exec=%s/.local/bin/%s\n", home_dir, pkg_name);
+    fprintf(fp, "Exec=%s\n", exec_path);
     fprintf(fp, "Icon=application-x-executable\n");
     fprintf(fp, "Path=\n");
     fprintf(fp, "Terminal=false\n");
@@ -78,4 +77,11 @@ int create_desktop_file(const char *pkg_name, const char *home_dir) {
     printf(COLOR_BLUE "[INFO] " COLOR_RESET "Desktop file created: %s\n", desktop_file);
     
     return 0;
+}
+
+int create_desktop_file(const char *pkg_name, const char *home_dir) {
+    // 默认使用 ~/.local/bin/<pkg-name> 作为可执行文件路径
+    char default_exec_path[MAX_PATH_LEN];
+    snprintf(default_exec_path, sizeof(default_exec_path), "%s/.local/bin/%s", home_dir, pkg_name);
+    return create_desktop_file_with_exec(pkg_name, home_dir, default_exec_path);
 }

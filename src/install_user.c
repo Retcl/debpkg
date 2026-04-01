@@ -96,6 +96,10 @@ int install_user(const char *deb_path) {
     
     print_info("Checking dependencies...");
     if (parse_dependencies(control_file, &deps, &dep_count) == 0 && dep_count > 0) {
+        // 立即保存依赖关系，防止后续操作破坏内存
+        print_info("Saving dependency record immediately after parsing...");
+        save_package_dependencies(pkg_name, pkg_version, deps, dep_count, home_dir);
+        
         printf(COLOR_BLUE "[INFO] " COLOR_RESET "Found %d dependencies:\n", dep_count);
         
         int missing_deps = 0;
@@ -245,6 +249,9 @@ int install_user(const char *deb_path) {
     
     print_info("Installing files to standard directories...");
     
+    // 用于记录找到的可执行文件路径
+    char main_exec_path[MAX_PATH_LEN] = {0};
+    
     // 按照标准目录结构分发文件
     
     // 1. 安装可执行文件到 ~/.local/bin/
@@ -258,15 +265,103 @@ int install_user(const char *deb_path) {
             mkdir(dst_bin, 0755);
         }
         
-        printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installing binaries to ~/.local/bin/");
-        snprintf(cmd, sizeof(cmd), 
-            "cp -rf \"%s\"/* \"%s/\"", src_bin, dst_bin);
-        execute_command(cmd);
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installing binaries to ~/.local/bin/\n");
         
-        // 设置可执行权限
-        snprintf(cmd, sizeof(cmd), 
-            "chmod +x \"%s\"/*", dst_bin);
-        execute_command(cmd);
+        // 检查源目录是否有文件
+        char check_cmd[MAX_CMD_LEN];
+        snprintf(check_cmd, sizeof(check_cmd), "find \"%s\" -type f -o -type l | wc -l", src_bin);
+        FILE *fp = popen(check_cmd, "r");
+        int file_count = 0;
+        if (fp) {
+            if (fscanf(fp, "%d", &file_count) != 1) file_count = 0;
+            pclose(fp);
+        }
+        
+        if (file_count > 0) {
+            printf("  Found %d files to install\n", file_count);
+            snprintf(cmd, sizeof(cmd), 
+                "cp -rfv \"%s\"/* \"%s/\" 2>&1 | sed 's/^/  /'", src_bin, dst_bin);
+            execute_command(cmd);
+            
+            // 设置可执行权限
+            snprintf(cmd, sizeof(cmd), 
+                "chmod +x \"%s\"/* 2>/dev/null", dst_bin);
+            execute_command(cmd);
+            
+            // 记录主可执行文件路径（假设第一个文件是主程序）
+            snprintf(main_exec_path, sizeof(main_exec_path), "%s/.local/bin/%s", home_dir, pkg_name);
+        } else {
+            printf("  No binaries found in usr/bin/\n");
+        }
+    } else {
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "No usr/bin/ directory in package\n");
+        
+        // 尝试在其他常见位置查找可执行文件
+        // 检查 usr/share/<pkg-name>/bin/ 或 usr/share/<pkg-name>/
+        char alt_bin_dirs[][MAX_PATH_LEN] = {
+            {0}, // 会被填充
+            {0},
+            {0}
+        };
+        snprintf(alt_bin_dirs[0], sizeof(alt_bin_dirs[0]), "%s/usr/share/%s/bin", temp_extract_dir, pkg_name);
+        snprintf(alt_bin_dirs[1], sizeof(alt_bin_dirs[1]), "%s/usr/share/%s", temp_extract_dir, pkg_name);
+        snprintf(alt_bin_dirs[2], sizeof(alt_bin_dirs[2]), "%s/usr/lib/%s/bin", temp_extract_dir, pkg_name);
+        
+        for (int i = 0; i < 3; i++) {
+            if (is_directory(alt_bin_dirs[i])) {
+                printf(COLOR_BLUE "[INFO] " COLOR_RESET "Found binaries in %s/\n", alt_bin_dirs[i]);
+                
+                // 复制整个目录到用户共享目录
+                char src_share[MAX_PATH_LEN];
+                char dst_share[MAX_PATH_LEN];
+                snprintf(src_share, sizeof(src_share), "%s/usr/share/%s", temp_extract_dir, pkg_name);
+                snprintf(dst_share, sizeof(dst_share), "%s/.local/share/%s", home_dir, pkg_name);
+                
+                if (create_directories(dst_share) != 0) {
+                    print_error("Failed to create share directory");
+                } else {
+                    FILE *fp;
+                    snprintf(cmd, sizeof(cmd), 
+                        "cp -rfv \"%s\"/* \"%s/\" 2>&1 | sed 's/^/  /'", src_share, dst_share);
+                    execute_command(cmd);
+                    
+                    // 查找可执行文件
+                    char find_exec_cmd[MAX_CMD_LEN];
+                    snprintf(find_exec_cmd, sizeof(find_exec_cmd), 
+                        "find \"%s/bin\" -type f -executable 2>/dev/null | head -1", dst_share);
+                    fp = popen(find_exec_cmd, "r");
+                    if (fp) {
+                        if (fgets(main_exec_path, sizeof(main_exec_path), fp) != NULL) {
+                            // 移除末尾换行符
+                            size_t len = strlen(main_exec_path);
+                            if (len > 0 && main_exec_path[len-1] == '\n') {
+                                main_exec_path[len-1] = '\0';
+                            }
+                        }
+                        pclose(fp);
+                    }
+                    
+                    // 创建符号链接到 ~/.local/bin/
+                    if (main_exec_path[0] != '\0') {
+                        char link_path[MAX_PATH_LEN];
+                        snprintf(link_path, sizeof(link_path), "%s/.local/bin/%s", home_dir, pkg_name);
+                        
+                        if (!is_directory(dst_bin)) {
+                            mkdir(dst_bin, 0755);
+                        }
+                        
+                        snprintf(cmd, sizeof(cmd), 
+                            "ln -sfv \"%s\" \"%s\" 2>&1", main_exec_path, link_path);
+                        printf(COLOR_BLUE "[INFO] " COLOR_RESET "Creating symlink: %s -> %s\n", 
+                            link_path, main_exec_path);
+                        execute_command(cmd);
+                        
+                        printf(COLOR_GREEN "[SUCCESS] " COLOR_RESET "Symlink created, you can run '%s' directly\n", pkg_name);
+                    }
+                }
+                break;
+            }
+        }
     }
     
     // 2. 安装库文件到 ~/.local/lib/
@@ -280,10 +375,28 @@ int install_user(const char *deb_path) {
             mkdir(dst_lib, 0755);
         }
         
-        printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installing libraries to ~/.local/lib/");
-        snprintf(cmd, sizeof(cmd), 
-            "cp -rf \"%s\"/* \"%s/\"", src_lib, dst_lib);
-        execute_command(cmd);
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installing libraries to ~/.local/lib/\n");
+        
+        // 检查源目录是否有文件
+        char check_cmd[MAX_CMD_LEN];
+        snprintf(check_cmd, sizeof(check_cmd), "find \"%s\" -type f | wc -l", src_lib);
+        FILE *fp = popen(check_cmd, "r");
+        int file_count = 0;
+        if (fp) {
+            if (fscanf(fp, "%d", &file_count) != 1) file_count = 0;
+            pclose(fp);
+        }
+        
+        if (file_count > 0) {
+            printf("  Found %d files to install\n", file_count);
+            snprintf(cmd, sizeof(cmd), 
+                "cp -rfv \"%s\"/* \"%s/\" 2>&1 | sed 's/^/  /'", src_lib, dst_lib);
+            execute_command(cmd);
+        } else {
+            printf("  No libraries found in usr/lib/\n");
+        }
+    } else {
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "No usr/lib/ directory in package\n");
     }
     
     // 3. 安装共享数据到 ~/.local/share/<package-name>/
@@ -298,9 +411,27 @@ int install_user(const char *deb_path) {
         }
         
         printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installing shared data to ~/.local/share/%s/\n", pkg_name);
-        snprintf(cmd, sizeof(cmd), 
-            "cp -rf \"%s\"/* \"%s/\"", src_share, dst_share);
-        execute_command(cmd);
+        
+        // 检查源目录是否有文件
+        char check_cmd[MAX_CMD_LEN];
+        snprintf(check_cmd, sizeof(check_cmd), "find \"%s\" -type f | wc -l", src_share);
+        FILE *fp = popen(check_cmd, "r");
+        int file_count = 0;
+        if (fp) {
+            if (fscanf(fp, "%d", &file_count) != 1) file_count = 0;
+            pclose(fp);
+        }
+        
+        if (file_count > 0) {
+            printf("  Found %d files to install\n", file_count);
+            snprintf(cmd, sizeof(cmd), 
+                "cp -rfv \"%s\"/* \"%s/\" 2>&1 | sed 's/^/  /'", src_share, dst_share);
+            execute_command(cmd);
+        } else {
+            printf("  No shared data found in usr/share/\n");
+        }
+    } else {
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "No usr/share/ directory in package\n");
     }
     
     // 4. 安装头文件到 ~/.local/include/<package-name>/
@@ -315,9 +446,27 @@ int install_user(const char *deb_path) {
         }
         
         printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installing headers to ~/.local/include/%s/\n", pkg_name);
-        snprintf(cmd, sizeof(cmd), 
-            "cp -rf \"%s\"/* \"%s/\"", src_include, dst_include);
-        execute_command(cmd);
+        
+        // 检查源目录是否有文件
+        char check_cmd[MAX_CMD_LEN];
+        snprintf(check_cmd, sizeof(check_cmd), "find \"%s\" -type f | wc -l", src_include);
+        FILE *fp = popen(check_cmd, "r");
+        int file_count = 0;
+        if (fp) {
+            if (fscanf(fp, "%d", &file_count) != 1) file_count = 0;
+            pclose(fp);
+        }
+        
+        if (file_count > 0) {
+            printf("  Found %d files to install\n", file_count);
+            snprintf(cmd, sizeof(cmd), 
+                "cp -rfv \"%s\"/* \"%s/\" 2>&1 | sed 's/^/  /'", src_include, dst_include);
+            execute_command(cmd);
+        } else {
+            printf("  No headers found in usr/include/\n");
+        }
+    } else {
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "No usr/include/ directory in package\n");
     }
     
     // 5. 安装配置文件到 ~/.local/etc/<package-name>/
@@ -332,9 +481,27 @@ int install_user(const char *deb_path) {
         }
         
         printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installing config files to ~/.local/etc/%s/\n", pkg_name);
-        snprintf(cmd, sizeof(cmd), 
-            "cp -rf \"%s\"/* \"%s/\"", src_etc, dst_etc);
-        execute_command(cmd);
+        
+        // 检查源目录是否有文件
+        char check_cmd[MAX_CMD_LEN];
+        snprintf(check_cmd, sizeof(check_cmd), "find \"%s\" -type f | wc -l", src_etc);
+        FILE *fp = popen(check_cmd, "r");
+        int file_count = 0;
+        if (fp) {
+            if (fscanf(fp, "%d", &file_count) != 1) file_count = 0;
+            pclose(fp);
+        }
+        
+        if (file_count > 0) {
+            printf("  Found %d files to install\n", file_count);
+            snprintf(cmd, sizeof(cmd), 
+                "cp -rfv \"%s\"/* \"%s/\" 2>&1 | sed 's/^/  /'", src_etc, dst_etc);
+            execute_command(cmd);
+        } else {
+            printf("  No config files found in etc/\n");
+        }
+    } else {
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "No etc/ directory in package\n");
     }
     
     // 6. 安装 man 文档到 ~/.local/share/man/
@@ -349,9 +516,27 @@ int install_user(const char *deb_path) {
         }
         
         print_info("Installing man pages to ~/.local/share/man/");
-        snprintf(cmd, sizeof(cmd), 
-            "cp -rf \"%s\"/* \"%s/\"", src_man, dst_man);
-        execute_command(cmd);
+        
+        // 检查源目录是否有文件
+        char check_cmd[MAX_CMD_LEN];
+        snprintf(check_cmd, sizeof(check_cmd), "find \"%s\" -type f | wc -l", src_man);
+        FILE *fp = popen(check_cmd, "r");
+        int file_count = 0;
+        if (fp) {
+            if (fscanf(fp, "%d", &file_count) != 1) file_count = 0;
+            pclose(fp);
+        }
+        
+        if (file_count > 0) {
+            printf("  Found %d files to install\n", file_count);
+            snprintf(cmd, sizeof(cmd), 
+                "cp -rfv \"%s\"/* \"%s/\" 2>&1 | sed 's/^/  /'", src_man, dst_man);
+            execute_command(cmd);
+        } else {
+            printf("  No man pages found in usr/share/man/\n");
+        }
+    } else {
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "No usr/share/man/ directory in package\n");
     }
     
     // 保存安装清单
@@ -373,22 +558,28 @@ int install_user(const char *deb_path) {
     }
     
     // 创建 desktop 文件
-    if (is_directory(dst_bin)) {
-        print_info("Creating desktop file...");
+    print_info("Creating desktop file...");
+    if (main_exec_path[0] != '\0') {
+        // 使用找到的实际可执行文件路径
+        if (create_desktop_file_with_exec(pkg_name, home_dir, main_exec_path) == 0) {
+            print_success("Desktop entry created successfully!");
+            printf(COLOR_BLUE "[INFO] " COLOR_RESET "Exec: %s\n", main_exec_path);
+        } else {
+            print_warning("Failed to create desktop file");
+        }
+    } else if (is_directory(dst_bin)) {
+        // 使用默认路径 ~/.local/bin/<pkg-name>
         if (create_desktop_file(pkg_name, home_dir) == 0) {
             print_success("Desktop entry created successfully!");
         } else {
             print_warning("Failed to create desktop file");
         }
+    } else {
+        print_warning("No executable found, skipping desktop file creation");
     }
     
-    // 保存依赖关系到数据库
-    print_info("Saving dependency record...");
-    if (save_package_dependencies(pkg_name, pkg_version, deps, dep_count, home_dir) == 0) {
-        print_success("Dependency record saved successfully!");
-    } else {
-        print_warning("Failed to save dependency record");
-    }
+    // 保存依赖关系到数据库（已移至解析后立即保存）
+    print_info("Dependency record already saved during parsing");
     
     print_success("Package installed successfully!");
     print_info("Installation summary:");

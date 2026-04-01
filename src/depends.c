@@ -92,7 +92,7 @@ int parse_dependencies(const char *control_path, Dependency **deps, int *count) 
     *deps = NULL;
     *count = 0;
     
-    char line[1024];
+    char line[4096];  // 增大缓冲区以支持长依赖列表（VS Code 的 Depends 字段超过 1KB）
     int in_depends = 0;
     
     while (fgets(line, sizeof(line), fp)) {
@@ -129,23 +129,39 @@ int parse_dependencies(const char *control_path, Dependency **deps, int *count) 
                 memset(dep, 0, sizeof(Dependency));
                 
                 // 提取包名（去除版本信息）
-                char *version_sep = strpbrk(token, "<>= ");
-                if (version_sep) {
-                    size_t name_len = version_sep - token;
-                    strncpy(dep->name, token, name_len);
+                // 首先跳过 token 的前导空格
+                char *trimmed_token = token;
+                while (*trimmed_token == ' ' || *trimmed_token == '\t') trimmed_token++;
+                
+                // 查找第一个空格，分离包名和版本部分
+                char *space_sep = strchr(trimmed_token, ' ');
+                if (space_sep) {
+                    // 有空格分隔，包名在空格前
+                    size_t name_len = space_sep - trimmed_token;
+                    strncpy(dep->name, trimmed_token, name_len);
                     dep->name[name_len] = '\0';
                     
-                    // 提取版本信息
-                    strncpy(dep->version, version_sep, sizeof(dep->version) - 1);
+                    // 版本信息在空格后（可能包含括号）
+                    char *version_start = space_sep + 1;
+                    while (*version_start == ' ' || *version_start == '\t') version_start++;
+                    strncpy(dep->version, version_start, sizeof(dep->version) - 1);
+                    dep->version[sizeof(dep->version) - 1] = '\0';
                 } else {
-                    // 没有版本信息，只有包名
-                    // 移除可能的空格和换行
-                    char *end = token + strlen(token) - 1;
-                    while (end > token && (*end == ' ' || *end == '\n' || *end == '\r')) {
-                        *end = '\0';
-                        end--;
+                    // 没有空格，检查是否有版本约束符号
+                    char *version_sep = strpbrk(trimmed_token, "<>=");
+                    if (version_sep) {
+                        // 有版本约束符号（无空格的情况）
+                        size_t name_len = version_sep - trimmed_token;
+                        strncpy(dep->name, trimmed_token, name_len);
+                        dep->name[name_len] = '\0';
+                        
+                        strncpy(dep->version, version_sep, sizeof(dep->version) - 1);
+                        dep->version[sizeof(dep->version) - 1] = '\0';
+                    } else {
+                        // 没有版本信息，只有包名
+                        strncpy(dep->name, trimmed_token, sizeof(dep->name) - 1);
+                        dep->name[sizeof(dep->name) - 1] = '\0';
                     }
-                    strncpy(dep->name, token, sizeof(dep->name) - 1);
                 }
                 
                 dep->installed = 0;  // 初始化为未安装
@@ -181,19 +197,39 @@ int parse_dependencies(const char *control_path, Dependency **deps, int *count) 
                     Dependency *dep = &(*deps)[*count];
                     memset(dep, 0, sizeof(Dependency));
                     
-                    char *version_sep = strpbrk(token, "<>= ");
-                    if (version_sep) {
-                        size_t name_len = version_sep - token;
-                        strncpy(dep->name, token, name_len);
+                    // 首先跳过 token 的前导空格
+                    char *trimmed_token = token;
+                    while (*trimmed_token == ' ' || *trimmed_token == '\t') trimmed_token++;
+                    
+                    // 查找第一个空格，分离包名和版本部分
+                    char *space_sep = strchr(trimmed_token, ' ');
+                    if (space_sep) {
+                        // 有空格分隔，包名在空格前
+                        size_t name_len = space_sep - trimmed_token;
+                        strncpy(dep->name, trimmed_token, name_len);
                         dep->name[name_len] = '\0';
-                        strncpy(dep->version, version_sep, sizeof(dep->version) - 1);
+                        
+                        // 版本信息在空格后（可能包含括号）
+                        char *version_start = space_sep + 1;
+                        while (*version_start == ' ' || *version_start == '\t') version_start++;
+                        strncpy(dep->version, version_start, sizeof(dep->version) - 1);
+                        dep->version[sizeof(dep->version) - 1] = '\0';
                     } else {
-                        char *end = token + strlen(token) - 1;
-                        while (end > token && (*end == ' ' || *end == '\n' || *end == '\r')) {
-                            *end = '\0';
-                            end--;
+                        // 没有空格，检查是否有版本约束符号
+                        char *version_sep = strpbrk(trimmed_token, "<>=");
+                        if (version_sep) {
+                            // 有版本约束符号（无空格的情况）
+                            size_t name_len = version_sep - trimmed_token;
+                            strncpy(dep->name, trimmed_token, name_len);
+                            dep->name[name_len] = '\0';
+                            
+                            strncpy(dep->version, version_sep, sizeof(dep->version) - 1);
+                            dep->version[sizeof(dep->version) - 1] = '\0';
+                        } else {
+                            // 没有版本信息，只有包名
+                            strncpy(dep->name, trimmed_token, sizeof(dep->name) - 1);
+                            dep->name[sizeof(dep->name) - 1] = '\0';
                         }
-                        strncpy(dep->name, token, sizeof(dep->name) - 1);
                     }
                     
                     dep->installed = 0;

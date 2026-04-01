@@ -23,4 +23,7 @@
 // 为已安装的包创建 desktop 文件
 int create_desktop_file(const char *pkg_name, const char *home_dir);
 
+// 创建 desktop 文件，支持自定义可执行文件路径
+int create_desktop_file_with_exec(const char *pkg_name, const char *home_dir, const char *exec_path);
+
 #endif // DEBPKG_DESKTOP_H

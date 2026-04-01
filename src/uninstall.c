@@ -366,6 +366,18 @@ int uninstall_package_smart(const char *pkg_name, const char *home_dir,
             printf("  Removed desktop file: %s\n", desktop_file);
         }
         
+        // 2.5. 清理符号链接（可执行文件）
+        char bin_link[MAX_PATH_LEN];
+        snprintf(bin_link, sizeof(bin_link), "%s/.local/bin/%s", home_dir, pkg_name);
+        
+        // 检查并删除符号链接或文件
+        struct stat st;
+        if (lstat(bin_link, &st) == 0) {
+            unlink(bin_link);
+            printf("  Removed symlink: %s\n", bin_link);
+            result->files_removed++;
+        }
+        
         // 3. 检查和清理依赖
         cleanup_unused_dependencies(pkg_name, home_dir, result);
         

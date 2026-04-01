@@ -80,6 +80,20 @@ int save_package_dependencies(const char *pkg_name, const char *pkg_version,
     
     get_user_deps_db_path(db_path, sizeof(db_path), home_dir);
     
+    // 检查是否已经存在该包的记录
+    fp = fopen(db_path, "r");
+    if (fp != NULL) {
+        char line[2048];
+        while (fgets(line, sizeof(line), fp)) {
+            if (strncmp(line, pkg_name, strlen(pkg_name)) == 0 && line[strlen(pkg_name)] == '|') {
+                fclose(fp);
+                print_warning("Package dependency record already exists");
+                return 0;
+            }
+        }
+        fclose(fp);
+    }
+    
     // 以追加方式打开文件
     fp = fopen(db_path, "a");
     if (fp == NULL) {
@@ -90,13 +104,33 @@ int save_package_dependencies(const char *pkg_name, const char *pkg_version,
     // 写入包名和版本
     fprintf(fp, "%s|%s|", pkg_name, pkg_version);
     
-    // 写入依赖列表
+    // 直接从 deps 数组写入，使用安全的字符串拷贝
     for (int i = 0; i < count; i++) {
         if (i > 0) fprintf(fp, ",");
-        fprintf(fp, "%s:%s", deps[i].name, deps[i].version[0] ? deps[i].version : "*");
+        
+        // 使用局部缓冲区确保数据安全
+        char safe_dep[320] = {0};  // 足够大的缓冲区容纳 name + version
+        
+        // 安全复制 name
+        char safe_name[256] = {0};
+        strncpy(safe_name, deps[i].name, sizeof(safe_name) - 1);
+        
+        // 安全复制 version  
+        char safe_version[64] = {0};
+        strncpy(safe_version, deps[i].version, sizeof(safe_version) - 1);
+        
+        // 组合成完整的依赖字符串
+        if (safe_version[0] && strcmp(safe_version, "*") != 0) {
+            snprintf(safe_dep, sizeof(safe_dep), "%s:%s", safe_name, safe_version);
+        } else {
+            snprintf(safe_dep, sizeof(safe_dep), "%s:*", safe_name);
+        }
+        
+        fprintf(fp, "%s", safe_dep);
     }
     
     fprintf(fp, "\n");
+    fflush(fp);
     fclose(fp);
     
     printf(COLOR_BLUE "[INFO] " COLOR_RESET "Saved dependency record for %s\n", pkg_name);

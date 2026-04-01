@@ -48,3 +48,5 @@ include/*.h.gch
 # Makefile 生成的
 *.d
 *.Po
+
+*.deb
