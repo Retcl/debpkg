@@ -31,7 +31,7 @@ error() {
 
 # 包配置
 PACKAGE_NAME="debpkg"
-VERSION="1.1.0"
+VERSION="2.0.0"
 ARCHITECTURE="amd64"
 MAINTAINER="Your Name <your.email@example.com>"
 DESCRIPTION="A modular DEB package installer written in C"

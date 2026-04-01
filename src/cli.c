@@ -56,7 +56,7 @@ void show_help(const char *prog_name) {
 }
 
 void show_version(void) {
-    printf("debpkg version 1.0.0\n");
+    printf("debpkg version 2.0.0\n");
     printf("A simple DEB package installer\n");
 }
 
