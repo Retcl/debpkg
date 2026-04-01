@@ -195,7 +195,7 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
     
     for (int i = 0; i < count; i++) {
         if (deps[i].installed) {
-            continue;  // 已安装的依赖跳过
+            continue;
         }
         
         // 提取包名（去掉版本约束）
@@ -207,8 +207,7 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
         char *space = strchr(pkg_name, ' ');
         if (space) *space = '\0';
         
-        printf(COLOR_BLUE "[INFO] " COLOR_RESET "Processing: %s%s\n", 
-               pkg_name, deps[i].version[0] ? " " : "");
+        printf(COLOR_BLUE "[INFO] " COLOR_RESET "Downloading: %s\n", pkg_name);
         
         // 创建临时文件路径
         snprintf(temp_deb_path, sizeof(temp_deb_path), "/tmp/%s_auto.deb", pkg_name);
@@ -218,27 +217,11 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
             print_warning("Failed to download: ");
             printf("%s\n", pkg_name);
             
-            // 提供手动安装指引
-            printf(COLOR_YELLOW "[MANUAL INSTALL GUIDE] " COLOR_RESET "\n");
-            printf("  You can install this dependency manually using one of these methods:\n\n");
-            printf("  Method 1 - System-wide installation (RECOMMENDED):\n");
-            printf("    sudo apt-get update && sudo apt-get install -y %s\n\n", pkg_name);
-            printf("  Method 2 - Download DEB and install to user directory:\n");
-            printf("    wget http://mirrors.aliyun.com/ubuntu/pool/main/*/%s*.deb\n", pkg_name);
-            printf("    ./debpkg install -u <package>.deb\n\n");
-            printf("  Method 3 - Check if it's already in system:\n");
-            printf("    dpkg -l | grep %s\n\n", pkg_name);
-            
             failed_count++;
             continue;
         }
         
         // 使用 debpkg 递归安装（用户目录模式）
-        print_info("Installing downloaded package to user directory...");
-        
-        // 这里需要调用 install_user 函数
-        // 但由于循环依赖问题，我们通过外部调用实现
-        // 注意：使用 echo 管道提供非交互式输入避免死循环
         char cmd[MAX_CMD_LEN];
         snprintf(cmd, sizeof(cmd), "echo \"3\" | ./debpkg install -u \"%s\" 2>/dev/null", temp_deb_path);
         
@@ -263,7 +246,8 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
     }
     
     // 显示统计信息
-    printf(COLOR_BLUE "[INFO] " COLOR_RESET "Installation summary:\n");
+    printf("\n");
+    print_info("Installation summary:");
     printf("  Successfully installed: %d\n", installed_count);
     printf("  Skipped (already installed): %d\n", skipped_count);
     printf("  Failed: %d\n", failed_count);
@@ -271,8 +255,7 @@ int auto_install_dependencies(Dependency *deps, int count, const char *home_dir)
     
     if (failed_count > 0) {
         printf(COLOR_YELLOW "[WARNING] " COLOR_RESET "%d dependencies failed to install.\n", failed_count);
-        printf("You can continue installation anyway (some features may not work), or\n");
-        printf("install the missing dependencies manually and re-run the installation.\n\n");
+        printf("You can continue installation anyway or install missing dependencies manually.\n\n");
     }
     
     return (failed_count == 0) ? 0 : -1;
